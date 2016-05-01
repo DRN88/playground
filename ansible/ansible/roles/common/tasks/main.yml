@@ -1,0 +1,24 @@
+- name: Enable EPEL Repository
+  yum: name=epel-release state=installed
+  register: common_install_epelrepo
+
+- name: Install default packages
+  yum: name={{item}} state=installed
+  with_items:
+    - epel-release
+    - nmap
+    - iftop
+    - iotop
+    - htop
+    - nmap
+    - tcptraceroute
+    - traceroute
+    - mlocate
+    - wget
+    - net-tools
+    - less
+    - nano
+    - libselinux-python
+    - unzip
+  register: common_install_pkg1
+  when: common_install_epelrepo|success

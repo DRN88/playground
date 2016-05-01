@@ -1,0 +1,32 @@
+- name: Install dependencies
+  yum: name={{item}} state=installed
+  with_items:
+    - curl
+    - policycoreutils
+    - libselinux-python
+    - openssh-server
+    - openssh-clients
+    - yum-utils
+    - postfix
+  register: gitlab_install_pkg1
+
+- name: Enable and start OpenSSH Server
+  service: name=sshd state=started enabled=yes
+  when: gitlab_install_pkg1|success
+
+- name: Enable and start Postfix
+  service: name=postfix state=started enabled=yes
+  when: gitlab_install_pkg1|success
+
+- name: Install GitLab Repository from template
+  template: src=gitlab_gitlab-ce.repo.j2 dest=/etc/yum.repos.d/gitlab_gitlab-ce.repo
+  register: gitlab_install_gitlabrepo
+
+- name: Install/Update Gitlab-CE from GitLab repo
+  yum: name=gitlab-ce state=latest
+  when: gitlab_install_gitlabrepo|success
+
+#- name: Configure Gitlab-CE with gitlab-ctl reconfigure
+#  command: /opt/gitlab/bin/gitlab-ctl reconfigure
+#  run_once: true
+#  when: gitlab_install_gitlabrepo|success

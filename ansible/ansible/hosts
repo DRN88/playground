@@ -1,0 +1,18 @@
+[localhost]
+localhost ansible_connection=local
+
+[spacewalk]
+#10.10.10.183
+
+[gitlab]
+192.168.122.141
+
+[gocdserver]
+192.168.122.99
+
+[consul]
+10.10.10.140 nodename=consul1
+10.10.10.107 nodename=consul2
+10.10.10.134 nodename=consul3
+10.10.10.160 nodename=consul4
+10.10.10.121 nodename=consul5

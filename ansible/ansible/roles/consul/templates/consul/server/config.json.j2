@@ -1,0 +1,11 @@
+{
+    "bootstrap": false,
+    "server": true,
+    "datacenter": "local",
+    "data_dir": "/var/consul",
+    "encrypt": "f71fYqJG6rkqBvHKx6owig==",
+    "bootstrap_expect": {{ groups['consul']|count }},
+    "ui_dir": "/etc/consul.d/consului",
+    "client_addr": "0.0.0.0",
+    "start_join": [ {% for host in groups['consul'] %} "{{ hostvars[host]['ansible_eth0']['ipv4']['address'] }}"{% if not loop.last %},{% endif %} {% endfor %} ]
+}

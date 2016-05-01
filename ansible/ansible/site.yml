@@ -1,0 +1,37 @@
+---
+
+- name: Spacewalk Server
+  hosts: spacewalk
+  remote_user: root
+  vars:
+    include_vars: group_vars
+  roles:
+    - common
+    - spacewalk
+
+- name: Gitlab Server
+  hosts: gitlab
+  remote_user: root
+  vars:
+    include_vars: group_vars
+  roles:
+    - common
+    - gitlab
+
+- name: GOCD Server
+  hosts: gocdserver
+  remote_user: root
+  vars:
+    include_vars: group_vars
+  roles:
+    - common
+    - gocdserver
+
+- name: Consul Servers
+  hosts: consul
+  remote_user: root
+  vars:
+    include_vars: group_vars
+  roles:
+    - common
+    - consul

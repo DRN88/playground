@@ -1,0 +1,48 @@
+- name: Download and Install Consul binary
+  unarchive: src=https://releases.hashicorp.com/consul/0.6.4/consul_0.6.4_linux_amd64.zip dest=/bin/ copy=no creates=/bin/consul
+
+- name: 'Creating Consul configuration folder consul.d'
+  file: path=/etc/consul.d state=directory mode=0755
+  register: consul_file_consuld
+
+- name: Create consul system user
+  user: name=consul shell=/bin/bash home=/etc/consul.d
+  register: consul_user_consul
+  when: consul_file_consuld|success
+
+- name: 'Creating Consul configuration folder consul.d/server'
+  file: path=/etc/consul.d/server state=directory mode=0755
+  when: (consul_file_consuld|success) and (consul_user_consul|success)
+
+- name: 'Creating Consul configuration folder consul.d/client'
+  file: path=/etc/consul.d/client state=directory mode=0755
+  when: (consul_file_consuld|success) and (consul_user_consul|success)
+
+- name: 'Creating Consul data folder'
+  file: path=/var/consul state=directory mode=0755 owner=consul group=consul
+  when: (consul_user_consul|success)
+
+- name: Install systemd service file for consul
+  template: src=systemd/consul.service.j2 dest=/etc/systemd/system/consul.service mode=0644
+  notify:
+    - systemctl_daemon_reload
+  register: consul_template_consulservice
+
+- name: Install Server config.json
+  template: src=consul/server/config.json.j2 dest=/etc/consul.d/server/config.json mode=0644
+  register: consul_template_server_configjson
+
+- name: Ensure Consul is running
+  service: name=consul state=started enabled=yes
+
+- name: Creating folder for Consul UI
+  file: dest=/etc/consul.d/consului state=directory
+  register: consul_file_consului
+
+- name: Download and Install Consul UI
+  unarchive: src=https://releases.hashicorp.com/consul/0.6.4/consul_0.6.4_web_ui.zip dest=/etc/consul.d/consului copy=no creates=/etc/consul.d/consului/index.html
+  when: consul_file_consului|success
+
+- name: Conditional Restart Consul
+  service: name=consul state=restarted
+  when: consul_template_server_configjson.changed

@@ -1,0 +1,17 @@
+- name: Install GOCD Server repository
+  template: src=gocd.repo.j2 dest=/etc/yum.repos.d/gocd.repo
+  register: gocdserver_install_gocdrepo
+
+- name: Install dependencies
+  yum: name={{item}} state=installed
+  with_items:
+    - java-1.8.0-openjdk
+  register: gocdserver_install_pkg1
+
+- name: Install GOCD Server
+  yum: name=go-server state=installed
+  register: gocdserver_install_gocdserver
+  when: (gocdserver_install_gocdrepo|success) and (gocdserver_install_pkg1|success)
+
+- name: Run go-server
+  service: name=go-server state=started enabled=yes

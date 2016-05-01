@@ -1,0 +1,6 @@
+---
+- name: systemctl_daemon_reload
+  command: systemctl daemon-reload
+
+- name: systemd_restart_consul
+  service: name=consul state=restarted
