@@ -1,0 +1,11 @@
+---
+
+- hosts: webshop
+  remote_user: ubuntu
+
+  roles:
+    - common
+    - sudoers
+    - nginx-drupal
+    #- postgresql
+    #- drupalwebshop

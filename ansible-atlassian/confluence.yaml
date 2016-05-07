@@ -1,0 +1,199 @@
+---
+- hosts: confluence
+  gather_facts: yes
+  vars:
+   # http://docs.ansible.com/ansible/playbooks_variables.html
+   - templates: /etc/ansible/templates/confluence
+   - files: /etc/ansible/files/confluence
+
+   - nginx_rpm_url: http://{{ rpmurl }}/nginx-1.9.11-1.el6.ngx.x86_64.rpm
+   - java_rpm_url: http://{{ rpmurl }}/jdk-8u73-linux-x64.rpm
+
+   - fqdn: docs.964bidco.com
+   - src_dir: /opt/src
+   - src_name: atlassian-confluence-5.9.7
+   - extracted_name: atlassian-confluence-5.9.7
+   - src_archive: "{{ src_name }}.tar.gz"
+   - src_url: https://www.atlassian.com/software/confluence/downloads/binary/{{ src_archive }}
+   - install_dir: /opt
+
+   - system_user: confluence
+   - system_user_home: /home/{{ system_user }}
+   - app: confluence
+   - base: "{{ install_dir }}/{{ extracted_name }}"
+   - javahome: /usr/java/latest
+   - jvm_minimum_memory: 1024m
+   - jvm_maximum_memory: 2048m
+
+   - confluence_tmp_initscript: "{{ templates }}/initscript.j2"
+   - confluence_tmp_setenvsh: "{{ templates }}/setenv.sh.j2"
+   - confluence_tmp_serverxml: "{{ templates }}/server.xml.j2"
+   - confluence_tmp_confluenceinitproperties: "{{ templates }}/confluence-init.properties.j2"
+
+   - mysql_rootpass: blablabla
+   - mysql_db: confluencedb
+   - mysql_user: confluencedbuser
+   - mysql_pass: blablabla
+   - mysql_tmp_mycnf: "{{ templates }}/my.cnf.j2"
+   - mysql_tmp_root_mycnf: "{{ templates }}/root-my.cnf.j2"
+   - mysql_file_jdbc: "{{ files }}/mysql-connector-java-5.1.38-bin.jar"
+   - mysql_max_allowed_packet: 500M
+   - mysql_innodb_buffer_pool_size: 3G      # Set this to 80% give or take of full RAM (SERVERMEMORY * 0.80)
+   - mysql_innodb_log_buffer_size: 128M     # innodb_log_buffer_size = innodb_log_file_size / 4
+   - mysql_innodb_log_file_size: 512M
+
+   - nginx_proxyport: 8090
+   - nginx_certname_cert: docs.964bidco.com-bundle.crt
+   - nginx_certname_key: docs.964bidco.com.key
+   - nginx_file_cert: "{{ files }}/{{ nginx_certname_cert }}"
+   - nginx_file_cert_key: "{{ files }}/{{ nginx_certname_key }}"
+   - nginx_tmp_vhostconf: "{{ templates }}/nginx-vhost.j2"
+   - nginx_tmp_nginxconf: "{{ templates }}/nginx.conf.j2"
+   - nginx_ssl_certificate: /etc/nginx/{{ nginx_certname_cert }}
+   - nginx_ssl_certificate_key: /etc/nginx/{{ nginx_certname_key }}
+   - nginx_worker_processes: 8
+   #- nginx_worker_processes: "{{ ansible_facts.ansible_processor_vcpus }}"
+
+
+  tasks:
+    - name: Install list of packages part 1
+      yum: name=epel-release state=installed
+      register: install_pkg1
+
+    - name: Install list of packages part 2
+      yum: name={{item}} state=installed
+      with_items:
+        - tar
+        - unzip
+        - htop
+        - nano
+        - tcpdump
+        - nmap
+        - iotop
+        - mysql-server
+        - MySQL-python27
+      register: install_pkg2
+      when: install_pkg1|success
+
+    - name: Install custom built NGINX
+      yum: name={{ nginx_rpm_url }} state=installed
+      register: install_nginx
+
+    - name: Install Oracle JAVA
+      yum: name={{ java_rpm_url }} state=installed
+      register: install_java
+
+    - name: Create working directory
+      file: path={{ src_dir }} state=directory mode=755
+      register: create_src_dir
+
+    - name: Download confluence server archive
+      get_url: url={{ src_url }} dest={{ src_dir }}/{{ src_name }}
+      register: confluence_download_src
+      when: create_src_dir|success
+
+    - name: Unarchive confluence server archive
+      unarchive: copy=no src={{ src_dir }}/{{ src_name }} dest={{ install_dir }} creates={{ install_dir }}/{{ extracted_name }}
+      register: confluence_unarchive_src
+      when: confluence_download_src|success
+
+    - name: Starting MySQL server
+      service: name=mysqld enabled=yes state=started
+      register: start_mysql
+      when: install_pkg2|success
+
+    - name: Configuring MySQL server - root password
+      command: /usr/bin/mysqladmin -u root password '{{ mysql_rootpass }}'
+      register: mysql_set_rootpass
+      when: start_mysql|success
+
+    - name: Configuring MySQL server
+      template: src={{ mysql_tmp_mycnf }} dest=/etc/my.cnf mode=644
+      template: src={{ mysql_tmp_root_mycnf }} dest=/root/.my.cnf mode=640
+      notify:
+        - restart mysqld
+      register: mysql_set_templates
+      when: start_mysql|success
+
+    - name: Creating confluence Database in MySQL
+      mysql_db: name={{ mysql_db }} state=present
+      register: mysql_create_db
+
+    - name: Creating confluence Database user in MySQL
+      mysql_user: name={{ mysql_user }} password={{ mysql_pass }} priv={{ mysql_db }}.*:ALL state=present
+      register: mysql_create_user
+
+    - name: Configuring confluence - initscript
+      template: src={{ confluence_tmp_initscript }} dest=/etc/init.d/{{ app }} mode=755
+      register: confluence_set_initscript
+      when: confluence_unarchive_src|success
+
+    - name: Configuring confluence - setenv.sh
+      template: src={{ confluence_tmp_setenvsh }} dest={{ install_dir }}/{{ extracted_name }}/bin/setenv.sh mode=755
+      register: confluence_set_setenvsh
+      when: confluence_unarchive_src|success
+
+    - name: Configuring confluence - server.xml
+      template: src={{ confluence_tmp_serverxml }} dest={{ install_dir }}/{{ extracted_name }}/conf/server.xml mode=644
+      register: confluence_set_serverxml
+      when: confluence_unarchive_src|success
+
+    - name: Configuring confluence - confluence-init.properties
+      template: src={{ confluence_tmp_confluenceinitproperties }} dest={{ install_dir }}/{{ extracted_name }}/confluence/WEB-INF/classes/confluence-init.properties mode=644
+      register: confluence_set_confluenceinitproperties
+      when: confluence_unarchive_src|success
+
+    - name: Create linux system user for confluence
+      user: name={{ system_user }} shell=/bin/bash createhome=yes
+      register: confluence_create_user
+      when: confluence_unarchive_src|success
+
+    - name: Setting permissions on Confluence server
+      file: dest={{ install_dir }}/{{ extracted_name }} owner={{ system_user }} group={{ system_user }} recurse=yes
+      register: confluence_permissions
+      when: (confluence_create_user|success) and (confluence_unarchive_src|success)
+
+    - name: Copy MySQL JDBC jar to confluence environment
+      copy: src={{ mysql_file_jdbc }} dest={{ install_dir }}/{{ extracted_name }}/lib/mysql-jdbc.jar mode=644
+      register: confluence_install_jdbc
+
+    - name: Starting confluence
+      service: name={{ app }} enabled=yes state=restarted
+      register: confluence_start
+      when: (confluence_create_user|success) and (confluence_set_initscript|success) and (confluence_set_setenvsh|success) and (confluence_set_serverxml|success) and (confluence_install_jdbc|success) and (confluence_set_confluenceinitproperties|success) and (confluence_permissions|success)
+
+    - name: Configuring NGINX with templates
+      template: src={{ nginx_tmp_nginxconf }} dest="/etc/nginx/nginx.conf"
+      template: src={{ nginx_tmp_vhostconf }} dest="/etc/nginx/conf.d/{{ fqdn }}.conf"
+      register: nginx_set_templates
+      when: install_nginx|success
+
+    - name: Installing nginx confluence certificate
+      copy: src={{ nginx_file_cert }} dest={{ nginx_ssl_certificate }} mode=644
+      register: nginx_set_cert
+      when: install_nginx|success
+
+    - name: Installing nginx confluence certificate key
+      copy: src={{ nginx_file_cert_key }} dest="{{ nginx_ssl_certificate_key }}" mode=600
+      register: nginx_set_cert_key
+      when: install_nginx|success
+
+    - name: Configuring NGINX - remove default.conf
+      file: path=/etc/nginx/conf.d/default.conf state=absent
+      register: nginx_set_removedefault
+      when: install_nginx|success
+
+    - name: Starting NGINX
+      service: name=nginx state=restarted enabled=yes
+      when: (nginx_set_templates|success) and (nginx_set_removedefault|success) and (nginx_set_cert|success) and (nginx_set_cert_key|success)
+
+
+
+  handlers:
+    - name: restart mysqld
+      service: name=mysqld state=restarted
+
+
+
+
+    #- name: Install confluence init script from template

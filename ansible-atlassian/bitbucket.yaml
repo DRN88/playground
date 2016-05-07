@@ -1,0 +1,256 @@
+---
+### Playbook Table of Contents
+#INSTALL
+#    install 1
+#	   install 2
+#	   install nginx
+#	   Install JAVA
+#
+#CONFIG Environment
+#	   /opt/src working dir
+#	   download bitbucket server archive
+#	   unarchive bitbucket server archive
+#	   create bitbucket system user
+#	   set permissions for bitbucket server
+#	   Template: initscript
+#
+#CONFIG Bitbucket
+#	   Template: setenv.sh
+#	   Template: server.xml
+#
+#CONFIG PostgreSQL
+#	   initdb
+#	   pg_hba.conf
+#	   postgresql.conf
+#	   start postgresql server
+#	   create bitbucketdbuser user
+#  	 create bitbucketdb database
+#
+#START Services
+# 	 start up postgresql (ensure enabled)
+# 	 start up bitbucket server (ensure enabled)
+#	   start up nginx server (ensure enabled)
+
+# Register Methods
+#    INSTALL: ri_<stuff>
+#    CONFIG: rc_<service>_<what>
+#    MISC: r_<todo>_<what>...
+#    SERVICE: rs_<service>
+#    TEMPLATE: rt_<service>_<template>
+# Variables
+#    TEMPLATE: t_<service>
+#    VARIABLE: v_<service>_<var>
+
+- hosts: bitbucket
+  gather_facts: yes
+  vars:
+   # http://docs.ansible.com/ansible/playbooks_variables.html
+   - templates: /etc/ansible/templates/bitbucket
+   - files: /etc/ansible/files/bitbucket
+
+   - v_rpm_url_nginx: http://{{ rpmurl }}/nginx-1.9.11-1.el6.ngx.x86_64.rpm
+   - v_rpm_url_java: http://{{ rpmurl }}/jdk-8u73-linux-x64.rpm
+
+   - v_fqdn: bitbucket.964bidco.com
+   - v_src_dir: /opt/src
+   - v_name: atlassian-bitbucket-4.4.1
+   - v_archive: "{{ v_name }}.tar.gz"
+   - v_url: https://www.atlassian.com/software/stash/downloads/binary/{{ v_archive }}
+   - v_dest_dir: /opt
+   - v_bitbucket_install_dir: "{{ v_dest_dir }}/{{ v_name }}"
+
+   - v_system_user: bitbucket
+   - v_system_user_home: /home/{{ v_system_user }}
+   - v_app: bitbucket
+   - v_javahome: /usr/java/latest
+   - v_jvm_minimum_memory: 1024m
+   - v_jvm_maximum_memory: 2048m
+
+   - t_bitbucket_initscript: "{{ templates }}/initscript.j2"
+   - t_bitbucket_setenvsh: "{{ templates }}/setenv.sh.j2"
+   - t_bitbucket_serverxml: "{{ templates }}/server.xml.j2"
+
+   - v_pgsql_version: postgresql94
+   - v_pgsql_listenaddress: 127.0.0.1
+   - v_pgsql_db: bitbucketdb
+   - v_pgsql_user: bitbucketdbuser
+   - v_pgsql_userpass: blablablabla
+   - t_pgsql_pghbaconf: "{{ templates }}/pg_hba.conf.j2"
+   - t_pgsql_postgresqlconf: "{{ templates }}/postgresql.conf.j2"
+
+   - v_nginx_proxyport: 7990
+   - v_nginx_cert_name: bitbucket.964bidco.com-bundle.crt
+   - v_nginx_cert_key: bitbucket.964bidco.com.key
+   - f_nginx_ssl_cert: "{{ files }}/{{ v_nginx_cert_name }}"
+   - f_nginx_ssl_key: "{{ files }}/{{ v_nginx_cert_key }}"
+   - v_nginx_ssl_certificate: /etc/nginx/{{ v_nginx_cert_name }}
+   - v_nginx_ssl_certificate_key: /etc/nginx/{{ v_nginx_cert_key }}
+   #- v_nginx_worker_processes: 8
+   - v_nginx_worker_processes: "{{ ansible_processor_vcpus }}"
+   - t_nginx_vhostconf: "{{ templates }}/nginx-vhost.j2"
+   - t_nginx_nginxconf: "{{ templates }}/nginx.conf.j2"
+
+  tasks:
+#
+# Install
+#
+    - name: INSTALL Packages 1
+      yum: name={{item}} state=installed
+      with_items:
+        - epel-release
+        #- https://download.postgresql.org/pub/repos/yum/9.4/redhat/rhel-6-x86_64/pgdg-centos94-9.4-2.noarch.rpm
+      register: ri_pkg1
+
+    - name: INSTALL Packages 2
+      yum: name={{item}} state=installed
+      with_items:
+        - tar
+        - unzip
+        - htop
+        - nano
+        - tcpdump
+        - nmap
+        - iotop
+        - yum-plugin-remove-with-leaves
+        - yum-plugin-versionlock
+        - postgresql94-server
+        - python27-psycopg2
+        - git
+      register: ri_pkg2
+      when: ri_pkg1|success
+
+    - name: INSTALL custom built NGINX
+      yum: name={{ v_rpm_url_nginx }} state=installed
+      register: ri_nginx
+
+    - name: INSTALL Oracle JAVA
+      yum: name={{ v_rpm_url_java }} state=installed
+      register: ri_java
+#
+# Environment
+#
+    - name: ENVIRONMENT Create linux system user for bitbucket
+      user: name={{ v_system_user }} shell=/bin/bash createhome=yes home={{ v_system_user_home }}
+      register: r_create_bitbucket_user
+
+    - name: ENVIRONMENT Create working directory
+      file: path={{ v_src_dir }} state=directory mode=755
+      register: r_create_srcdir
+
+    - name: ENVIRONMENT Download bitbucket server archive
+      get_url: url={{ v_url }} dest={{ v_src_dir }}/{{ v_name }}
+      when: r_create_srcdir|success
+      register: r_download_bitbucket_src
+
+    - name: ENVIRONMENT Unarchive bitbucket server archive
+      unarchive: copy=no src={{ v_src_dir }}/{{ v_name }} dest={{ v_dest_dir }} #creates={{ v_bitbucket_install_dir }}
+      notify:
+        - h_set_bitbucket_permissions
+      when: r_download_bitbucket_src|success
+      register: r_unarchive_bitbucket_src
+
+    - name: ENVIRONMENT Deploy bitbucket init script
+      template: src={{ t_bitbucket_initscript }} dest="/etc/init.d/{{ v_app }}" mode=755
+      register: rt_bitbucket_initscript
+
+#
+# Bitbucket
+#
+    - name: BITBUCKET Configuring Bitbucket setenv.sh
+      template: src={{ t_bitbucket_setenvsh }} dest="{{ v_bitbucket_install_dir }}/bin/setenv.sh"
+      notify:
+        - h_set_bitbucket_permissions
+      when: r_unarchive_bitbucket_src|success
+      register: rt_bitbucket_setenvsh
+
+    - name: BITBUCKET Configuring Bitbucket server.xml
+      template: src={{ t_bitbucket_serverxml }} dest="{{ v_bitbucket_install_dir }}/conf/server.xml"
+      notify:
+        - h_set_bitbucket_permissions
+      when: r_unarchive_bitbucket_src|success
+      register: rt_bitbucket_serverxml
+
+#
+# PostgreSQL
+#
+    - name: CONFIG PostgreSQL initdb
+      command: service {{ v_pgsql_version }} initdb en_US.UTF-8
+      when: ri_pkg2|success
+      register: rc_pgsql_initdb
+
+    - name: TEMPLATE PostgreSQL pg_hba.conf
+      template: src={{ t_pgsql_pghbaconf }} dest=/var/lib/pgsql94/data/pg_hba.conf mode=600
+      when: rc_pgsql_initdb|success
+      register: rt_pgsql_pghbaconf
+
+    - name: TEMPLATE PostgreSQL postgresql.conf
+      template: src={{ t_pgsql_postgresqlconf }} dest=/var/lib/pgsql94/data/postgresql.conf mode=600
+      when: rc_pgsql_initdb|success
+      register: rt_pgsql_postgresqlconf
+
+    - name: SERVICE Starting PostgreSQL server
+      service: name={{ v_pgsql_version }} enabled=yes state=started
+      when: (rt_pgsql_pghbaconf|success) and (rt_pgsql_postgresqlconf|success)
+      register: rs_pgsql
+
+    - name: CONFIG Creating user in PostgreSQL
+      postgresql_user: user={{ v_pgsql_user }} password={{ v_pgsql_userpass }}
+      when: rs_pgsql|success
+      register: rc_pgsql_createuser
+
+    - name: CONFIG Creating database in PostgreSQL
+      postgresql_db: name={{ v_pgsql_db }} owner={{ v_pgsql_user }} state=present encoding='UTF-8' lc_collate='en_US.UTF-8' lc_ctype='en_US.UTF-8'
+      when: rc_pgsql_createuser|success
+      register: rc_pgsql_createdb
+#
+# NGINX
+#
+    - name: CONFIG NGINX with templates
+      template: src={{ t_nginx_nginxconf }} dest="/etc/nginx/nginx.conf"
+      register: rt_nginx_nginxconf
+      when: ri_nginx|success
+
+    - name: CONFIG NGINX with templates
+      template: src={{ t_nginx_vhostconf }} dest="/etc/nginx/conf.d/{{ v_fqdn }}.conf"
+      register: rt_nginx_vhostconf
+      when: ri_nginx|success
+
+    - name: CONFIG nginx bitbucket certificate
+      copy: src={{ f_nginx_ssl_cert }} dest={{ v_nginx_ssl_certificate }} mode=644
+      register: rf_nginx_cert
+      when: ri_nginx|success
+
+    - name: CONFIG nginx bitbucket certificate key
+      copy: src={{ f_nginx_ssl_key }} dest="{{ v_nginx_ssl_certificate_key }}" mode=600
+      register: rf_nginx_cert_key
+      when: ri_nginx|success
+
+    - name: CONFIG NGINX remove conf.d/default.conf
+      file: path=/etc/nginx/conf.d/default.conf state=absent
+      register: rc_nginx_removedefaultconf
+      when: ri_nginx|success
+#
+# Start Services
+#
+    - name: SERVICE Starting bitbucket
+      service: name={{ v_app }} enabled=yes state=restarted
+      register: rs_bitbucket
+      when: >
+            (r_create_bitbucket_user|success) and
+            (rt_bitbucket_initscript|success) and
+            (rt_bitbucket_serverxml|success) and
+            (rt_bitbucket_setenvsh|success)
+
+    - name: SERVICE Starting NGINX
+      service: name=nginx state=restarted enabled=yes
+      when: >
+            (rt_nginx_nginxconf) and
+            (rt_nginx_vhostconf|success) and
+            (rc_nginx_removedefaultconf|success) and
+            (rf_nginx_cert|success) and
+            (rf_nginx_cert_key|success)
+
+  handlers:
+    - name: h_set_bitbucket_permissions
+      file: dest={{ v_bitbucket_install_dir }} owner={{ v_system_user }} group={{ v_system_user }} recurse=yes
+      when: (r_unarchive_bitbucket_src|success) and (r_create_bitbucket_user|success)
