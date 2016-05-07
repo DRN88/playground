@@ -1,5 +1,5 @@
 - name: Install nginx
-  apt: name=nginx state=latest
+  apt: name=nginx-extras state=latest
 
 - name: Remove default virtualhost
   file: dest=/etc/nginx/sites-enabled/default state=absent
@@ -8,9 +8,15 @@
   template: src=nginx.conf.j2 dest=/etc/nginx/nginx.conf mode=0644
   register: nginx_template_nginxconf
 
+- name: Ensure ansible virtualhost directory exists to load virtualhosts from
+  file: dest=/etc/nginx/conf.d/ansible state=directory owner=root group=root mode=755
+
 - name: Install nginx drupal virtualhost config from template
-  template: src=drupalvhost.conf.j2 dest=/etc/nginx/conf.d/{{ vhostfqdn }}.conf owner=www-data group=www-data mode=0644
+  template: src=drupalvhost.conf.j2 dest=/etc/nginx/conf.d/ansible/{{ vhostfqdn }}.conf owner=www-data group=www-data mode=0644
   register: nginx_template_drupalvhost
+
+- name: Creating folder for virtualhosts data
+  file: path=/opt/www/{{ vhostfqdn }} state=directory owner=root group=root mode=755
 
 - name: Restart nginx
   service: name=nginx state=restarted

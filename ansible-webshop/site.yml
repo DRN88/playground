@@ -3,9 +3,27 @@
 - hosts: webshop
   remote_user: ubuntu
 
+  vars:
+    - pgsql_db_name: drupal
+    - pgsql_db_username: drupaluser
+    - pgsql_db_userpass: MyDBPassw0rd
+    - pgsql_db_host: 127.0.0.1
+    - pgsql_pghba_host: "{{ pgsql_db_host }}/32"
+    - pgsql_db_authmode: md5
+
+    - vhostfqdn: sego.hu
+    - drupalversion: 7.43
+    - drush_site_locale: hu-HU
+    - drush_admin_username: admin
+    - drush_admin_userpass: Passw0rd
+    - drush_admin_email: gorkhaan@gmail.com
+    - drush_site_email: noreply@{{ vhostfqdn }}
+
+
   roles:
     - common
     - sudoers
-    - nginx-drupal
-    #- postgresql
-    #- drupalwebshop
+    - nginx
+    - php-fpm
+    - postgresql95
+    - drupal

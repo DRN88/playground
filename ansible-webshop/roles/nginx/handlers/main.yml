@@ -1,3 +1,6 @@
 ---
 - name: restart_nginx
   service: name=nginx state=restarted
+
+- name: restart_phpfpm
+  service: name=php-fpm state=restarted

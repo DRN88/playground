@@ -1,5 +1,5 @@
 - name: Install default packages
-  apt: name={{item}} state=installed
+  apt: name={{ item }} state=installed
   with_items:
     - tcptraceroute
     - nmap
@@ -11,4 +11,6 @@
     - unrar
     - tree
     - tcpdump
+    - mlocate
+    - nano
   register: install_pkg1
