@@ -6,7 +6,7 @@
 
 server {
         listen 80;
-        
+
         server_name {{ vhostfqdn }};
         root /opt/www/{{ vhostfqdn }};
 
@@ -51,6 +51,46 @@ server {
         }
 
         location ~ \.php$ {
+
+                ### FASTCGI CACHING START ###
+
+                # Setup var defaults
+                set $no_cache "";
+
+                # If non GET/HEAD, don't cache and mark user as uncacheable for 1 second via cookie
+                if ($request_method !~ ^(GET|HEAD)$) {
+                  set $no_cache "1";
+                }
+
+                # Drop no cache cookie if need be
+                # (for some reason, add_header fails if included in prior if-block)
+                if ($no_cache = "1") {
+                  add_header Set-Cookie "_mcnc=1; Max-Age=2; Path=/";
+                  add_header X-Microcachable "0";
+                }
+
+                # Bypass cache if no-cache cookie is set
+                if ($http_cookie ~* "_mcnc") {
+                  set $no_cache "1";
+                }
+
+                # Bypass cache if flag is set
+                fastcgi_no_cache $no_cache;
+                fastcgi_cache_bypass $no_cache;
+
+                fastcgi_cache microcache;
+                fastcgi_cache_key $server_name|$request_uri;
+                fastcgi_cache_valid 200 301 302 404 {{ nginx_fastcgicache_valid }};
+                fastcgi_max_temp_file_size {{ nginx_fastcgicache_max_temp_file_size }};
+                fastcgi_cache_use_stale updating;
+                fastcgi_pass_header Set-Cookie;
+                fastcgi_pass_header Cookie;
+                fastcgi_ignore_headers Cache-Control Expires Set-Cookie;
+                fastcgi_split_path_info ^(.+\.php)(/.+)$;
+
+                ### FASTCGI CACHING END ###
+
+
                 include fastcgi_params;
                 fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
                 fastcgi_intercept_errors on;

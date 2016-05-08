@@ -1,0 +1,103 @@
+- name: Installing Drupal CLI called drush
+  apt: name=drush state=latest
+
+- name: Creating temp download folder
+  file: path=/opt/drupalsrc state=directory
+
+- name: Downloading Drupal source
+  # Ansible 2.1 version needed for this===> unarchive: src=https://ftp.drupal.org/files/projects/drupal-{{ drupalversion }}.tar.gz dest=/opt/www/{{ vhostfqdn }} copy=no creates=/opt/www/{{ vhostfqdn }}/index.php extra_opts="--strip-component 1"
+  #unarchive: src=https://ftp.drupal.org/files/projects/drupal-{{ drupalversion }}.tar.gz dest=/opt/drupalsrc/ copy=no creates=/opt/drupalsrc/drupal-{{ drupalversion }}
+  get_url: url=https://ftp.drupal.org/files/projects/drupal-{{ drupalversion }}.tar.gz dest=/opt/drupalsrc/drupal-{{ drupalversion }}.tar.gz
+  register: drupal_download_source
+
+- stat: path=/opt/www/{{ vhostfqdn }}/index.php
+  register: drupal_already_installed
+
+- name: Installing Drupal to virtualhost folder
+  #command: creates=/opt/www/{{ vhostfqdn }}/index.php "cp -ar /opt/drupalsrc/drupal-{{ drupalversion }} /opt/www/{{ vhostfqdn }}"
+  command: "tar -xzf /opt/drupalsrc/drupal-{{ drupalversion }}.tar.gz -C /opt/www/{{ vhostfqdn }} --strip-component 1"
+  when: (drupal_download_source|success) and (drupal_already_installed.stat.exists == False)
+
+#- stat: path=/opt/www/{{ vhostfqdn }}/sites/default/settings.php
+#  register: drupal_already_configured
+
+- name: Setting up default drupal site with drush
+  command: >
+      drush site-install standard
+      --root=/opt/www/{{ vhostfqdn }}
+      --site-name={{ vhostfqdn }}
+      --site-mail={{ drush_site_email }}
+      --account-name={{ drush_admin_username }}
+      --account-pass={{ drush_admin_userpass }}
+      --account-mail={{ drush_admin_email }}
+      --locale={{ drush_site_locale }}
+      --db-url=pgsql://{{ pgsql_db_username }}:{{ pgsql_db_userpass }}@{{ pgsql_db_host }}:/{{ pgsql_db_name }}
+      -y
+      creates=/opt/www/{{ vhostfqdn }}/sites/default/settings.php
+  environment:
+    - PGPASSWORD: "{{ drush_admin_userpass }}"
+  #when: (drupal_already_configured.stat.exists == False)
+  tags:
+    - drush-install
+
+#
+# Module installations
+#
+- name: Installing Drupal Commerce module dependency views
+  command: drush --root=/opt/www/{{ vhostfqdn }} en views -y creates=/opt/www/{{ vhostfqdn }}/sites/all/modules/views
+
+- name: Installing Drupal Commerce module dependency addressfield
+  command: drush --root=/opt/www/{{ vhostfqdn }} en addressfield -y creates=/opt/www/{{ vhostfqdn }}/sites/all/modules/addressfield
+
+- name: Installing Drupal Commerce module
+  command: drush --root=/opt/www/{{ vhostfqdn }} en commerce -y creates=/opt/www/{{ vhostfqdn }}/sites/all/modules/commerce
+
+- name: Installing disable_messages module
+  command: drush --root=/opt/www/{{ vhostfqdn }} en disable_messages -y creates=/opt/www/{{ vhostfqdn }}/sites/all/modules/disable_messages
+
+- name: Installing language module drush_language
+  command: drush --root=/opt/www/{{ vhostfqdn }} dl drush_language -y creates=/opt/www/{{ vhostfqdn }}/sites/all/modules/drush_language
+
+- name: Installing language module l10n_update
+  command: drush --root=/opt/www/{{ vhostfqdn }} en l10n_update -y creates=/opt/www/{{ vhostfqdn }}/sites/all/modules/l10n_update
+
+- name: Setting up Drupal cron with drush and linux crontab
+  cron: name="Drupal drush cron" job="{{ drush_build_binpath }}/drush --root=/opt/www/{{ vhostfqdn }} --uri={{ vhostfqdn }} --quiet cron" minute={{ drush_cronjob_minute }} user=www-data
+
+#
+# Permissions
+#
+- name: Fix permission for sites/default
+  file: path=/opt/www/{{ vhostfqdn }}/sites/default owner=www-data group=root mode=0750
+
+- name: Fix permission for sites/default/files
+  file: path=/opt/www/{{ vhostfqdn }}/sites/default/files owner=www-data group=root mode=0750
+
+- name: Fix permission for sites/all/translations
+  file: path=/opt/www/{{ vhostfqdn }}/sites/all/translations owner=www-data group=root mode=0750
+
+- name: Fix ctools/css permissions
+  file: path=/opt/www/{{ vhostfqdn }}/sites/all/modules/ctools/css owner=www-data group=root mode=0750
+
+- name: Run Drush configurations
+  command: "{{ item }}"
+  with_items:
+    - drush --root=/opt/www/{{ vhostfqdn }} variable-set --exact site_default_country HU
+    - drush --root=/opt/www/{{ vhostfqdn }} variable-set --exact date_default_timezone "Europe/Budapest"
+    - drush --root=/opt/www/{{ vhostfqdn }} variable-set --exact date_first_day 1
+    - drush --root=/opt/www/{{ vhostfqdn }} variable-set --exact disable_messages_enable 1
+    - drush --root=/opt/www/{{ vhostfqdn }} variable-set --exact user_pictures 0
+    - drush --root=/opt/www/{{ vhostfqdn }} variable-set --exact date_format_long "l, Y,  F j - H:i"
+    - drush --root=/opt/www/{{ vhostfqdn }} variable-set --exact date_format_medium "D, Y/m/d - g:ia"
+    - drush --root=/opt/www/{{ vhostfqdn }} variable-set --exact date_format_short "Y/m/d - g:ia"
+    - drush --root=/opt/www/{{ vhostfqdn }} variable-set --exact l10n_update_check_frequency "7"
+    - drush --root=/opt/www/{{ vhostfqdn }} variable-set --exact l10n_update_check_disabled 0
+    - drush --root=/opt/www/{{ vhostfqdn }} variable-set --exact l10n_update_check_mode "3"
+    - drush --root=/opt/www/{{ vhostfqdn }} variable-set --exact l10n_update_download_store "sites/all/translations"
+    - drush --root=/opt/www/{{ vhostfqdn }} variable-set --exact l10n_update_import_mode "0"
+    - drush --root=/opt/www/{{ vhostfqdn }} language-add hu
+    - drush --root=/opt/www/{{ vhostfqdn }} language-enable hu
+    - drush --root=/opt/www/{{ vhostfqdn }} l10n-update-refresh
+    - drush --root=/opt/www/{{ vhostfqdn }} l10n-update
+    - drush --root=/opt/www/{{ vhostfqdn }} language-default hu
+    - drush --root=/opt/www/{{ vhostfqdn }} language-disable en

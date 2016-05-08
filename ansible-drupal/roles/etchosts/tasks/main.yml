@@ -1,0 +1,3 @@
+# Fix for Drupal error: "Your system or network configuration does not allow Drupal to access web pages, resulting in reduced functionality. (...)"
+- name: Adding localhost binding for our domain
+  lineinfile: dest=/etc/hosts line="127.0.0.1 {{ vhostfqdn }}"

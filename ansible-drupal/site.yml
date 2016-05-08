@@ -1,7 +1,7 @@
 ---
 
-- hosts: webshop
-  remote_user: ubuntu
+- hosts: shop-prod
+  remote_user: root
 
   vars:
     - pgsql_db_name: drupal
@@ -11,19 +11,32 @@
     - pgsql_pghba_host: "{{ pgsql_db_host }}/32"
     - pgsql_db_authmode: md5
 
-    - vhostfqdn: sego.hu
+    - vhostfqdn: gabit.hu
     - drupalversion: 7.43
     - drush_site_locale: hu-HU
     - drush_admin_username: admin
     - drush_admin_userpass: Passw0rd
     - drush_admin_email: gorkhaan@gmail.com
     - drush_site_email: noreply@{{ vhostfqdn }}
+    - drush_build_version: "7.*"
+    - drush_build_installdir: /usr/share/drushcustom
+    - drush_build_binpath: /usr/bin
+    - drush_cronjob_minute: "*/5"
 
+    - nginx_fastcgicache_path: /dev/shm/microcache
+    - nginx_fastcgicache_maxsize: 100M
+    - nginx_fastcgicache_keyszone: 10M
+    - nginx_fastcgicache_valid: 5s
+    - nginx_fastcgicache_max_temp_file_size: 10M
+
+    - drupal_date_default_timezone: ''
 
   roles:
     - common
     - sudoers
+    - etchosts
     - nginx
     - php-fpm
     - postgresql95
+    - drush
     - drupal

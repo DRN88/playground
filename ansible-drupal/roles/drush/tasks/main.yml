@@ -1,0 +1,21 @@
+- name: Installing dependencies composer and unzip
+  apt: name={{ item }} state=installed
+  with_items:
+    - composer
+    - unzip
+  tags:
+    - drushbuild
+
+- name: Creating Install directory for Drush {{ drush_build_version }}
+  file: path={{ drush_build_installdir }} state=directory owner=root group=root mode=0755
+  tags:
+    - drushbuild
+
+- name: Build and Install Drush
+  command: "{{ item }} creates={{ drush_build_installdir }}/vendor"
+  with_items:
+    - composer --working-dir={{ drush_build_installdir }} init --require=drush/drush:{{ drush_build_version }} -n
+    - composer --working-dir={{ drush_build_installdir }} config bin-dir {{ drush_build_binpath }}
+    - composer --working-dir={{ drush_build_installdir }} install
+  tags:
+    - drushbuild

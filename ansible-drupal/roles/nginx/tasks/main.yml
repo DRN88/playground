@@ -15,6 +15,9 @@
   template: src=drupalvhost.conf.j2 dest=/etc/nginx/conf.d/ansible/{{ vhostfqdn }}.conf owner=www-data group=www-data mode=0644
   register: nginx_template_drupalvhost
 
+- name: Install fastcgi microcache configuration
+  template: src=microcache.conf.j2 dest=/etc/nginx/conf.d/ansible/microcache.conf owner=www-data group=www-data mode=0644
+
 - name: Creating folder for virtualhosts data
   file: path=/opt/www/{{ vhostfqdn }} state=directory owner=root group=root mode=755
 
