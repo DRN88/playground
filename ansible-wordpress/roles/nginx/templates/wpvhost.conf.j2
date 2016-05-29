@@ -1,9 +1,0 @@
-server {
-       listen 80;
-       server_name {{ vhostfqdn }};
-       location /.well-known/acme-challenge {
-           root {{ vhostspath }}/{{ vhostfqdn }};
-           autoindex on;
-           allow all;
-       }
-}
