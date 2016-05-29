@@ -1,0 +1,12 @@
+fastcgi_cache_path {{ nginx_fastcgicache_path }} levels=1:2 keys_zone=microcache:{{ nginx_fastcgicache_keyszone }} max_size={{ nginx_fastcgicache_maxsize }} inactive=1h;
+
+map $http_cookie $cache_uid {
+default nil; # hommage to Lisp :)
+~SESS[[:alnum:]]+=(?<session_id>[[:alnum:]]+) $session_id;
+}
+
+map $request_method $no_cache {
+default 1;
+HEAD 0;
+GET 0;
+}

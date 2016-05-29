@@ -1,0 +1,2 @@
+- name: Set up passwordless sudo
+  copy: src=nopasswd dest=/etc/sudoers.d/nopasswd owner=root group=root mode=0440
